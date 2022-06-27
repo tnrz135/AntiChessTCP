@@ -126,12 +126,6 @@ gameEnded = False
 
 while running:
     try:
-        # handle socket
-        if difficulty == "host":
-            data = conn.recv(1024)
-            if data:
-                print(data)
-
         for event in pygame.event.get(): # handle GUI
             if event.type == pygame.QUIT:
                 running = False
@@ -146,9 +140,9 @@ while running:
                     gameStarted = True
                 elif event.key == pygame.K_j:
                     difficulty = "join"
-                    gameStarted = True
                     s.connect(address)
-                    s.sendall(b"Connected?")
+                    conn = s
+                    gameStarted = True
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # a button was clicked
                 pos = event.pos
                 if not gameStarted and not gameEnded: # ai menu selection
@@ -166,7 +160,7 @@ while running:
                         gameStarted = True
 
 
-                elif whiteTurn and not gameEnded and gameStarted: # a button was clicked during host turn
+                elif whiteTurn and not gameEnded and gameStarted and difficulty != "join": # a button was clicked during host turn
                     tile = coordinates_to_pos(pos)  # get current tile
 
                     # check if white piece here
@@ -192,6 +186,8 @@ while running:
                             prolog.query(
                                 f"""move("{selected_tile[0]}",{selected_tile[1]},"{tile[0]}",{tile[1]},white)"""
                             ))
+                        if difficulty == "host":
+                            conn.sendall(bytes(f"{selected_tile[0]}{selected_tile[1]}{tile[0]}{tile[1]}", 'utf-8'))
                         print(
                             f"white: {selected_tile[0]}-{selected_tile[1]}-{tile[0]}-{tile[1]}"
                         )
@@ -225,6 +221,7 @@ while running:
                             prolog.query(
                                 f"""move("{selected_tile[0]}",{selected_tile[1]},"{tile[0]}",{tile[1]},black)"""
                             ))
+                        conn.sendall(bytes(f"{selected_tile[0]}{selected_tile[1]}{tile[0]}{tile[1]}", 'utf-8'))
                         print(
                             f"black: {selected_tile[0]}-{selected_tile[1]}-{tile[0]}-{tile[1]}"
                         )
@@ -262,10 +259,34 @@ while running:
                 gameDisplay.blit(hard, (370, 550))
 
         pygame.display.update()
-        if not whiteTurn and difficulty != "join" and difficulty != "host":
-            print("thinking...")
-            list(prolog.query(f"aiMove({difficulty})"))
-            whiteTurn = True
+
+        if not whiteTurn and gameStarted and not gameEnded:
+            if difficulty == "host":
+                data = conn.recv(8)
+                if data:
+                    data = data.decode('utf-8')
+                    selected_tile = (data[0], data[1])
+                    tile = (data[2], data[3])
+                    list(prolog.query(
+                        f"""move("{selected_tile[0]}",{selected_tile[1]},"{tile[0]}",{tile[1]},black)."""
+                    ))
+                    whiteTurn = True
+            elif difficulty != "join":
+                print("thinking...")
+                list(prolog.query(f"aiMove({difficulty})."))
+                whiteTurn = True
+        elif whiteTurn and difficulty == "join" and gameStarted and not gameEnded:
+            # get action from TCP
+            data = conn.recv(8)
+            if data:
+                data = data.decode('utf-8')
+                selected_tile = (data[0], data[1])
+                tile = (data[2], data[3])
+                list(prolog.query(
+                    f"""move("{selected_tile[0]}",{selected_tile[1]},"{tile[0]}",{tile[1]},white)."""
+                ))
+            whiteTurn = False
+
         clock.tick(5)
 
     except Exception as e:
